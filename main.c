@@ -2,33 +2,34 @@
 #include <stdio.h>
 #include <SDL/SDL.h>
 
-#define DEPTH 32
-#define GRID_SIZE 70
+#define DESIRED_DEPTH 32
+#define GRID_SIZE     70
+#define G_SDL_SURFACE_TYPE SDL_SWSURFACE
 
-/* The Layout */
+/* =======================================================================
+ *   Structs & Typedefs
+ * ======================================================================= */
 struct screen_layout {
     SDL_Rect screen;
     SDL_Rect map;
     SDL_Rect message;
-} Layout = {
-    {0,  0,   640, 480},
-    {10, 10,  620, 440},
-    {10, 460, 620, 10 },
 };
-
-/* Structs */
-struct terrain {
-    SDL_Surface *surface;
-    SDL_Rect    surface_size;
-    SDL_Rect    grid_size;
-    SDL_Rect    view;
-};
-
 struct level {
     SDL_Rect size;
     Uint32   terrain_data[10][10];
 };
 
+/* =======================================================================
+ *   Globals
+ * ======================================================================= */
+SDL_Surface *Screen;
+Uint8       g_Depth = DESIRED_DEPTH;
+
+struct screen_layout Layout = {
+    {0,  0,   640, 480},
+    {10, 10,  620, 440},
+    {10, 460, 620, 10 },
+};
 struct level Level1 = {
     {0,0, 10, 10},
     {
@@ -45,62 +46,68 @@ struct level Level1 = {
     },
 };
 
-/* Globals */
-SDL_Surface *Screen;
-
-struct terrain *
-terrain_new(struct level *level)
+/* =======================================================================
+ *   Graphics
+ * ======================================================================= */
+ 
+/* Make a surface that contains the visual representation of "level" */
+SDL_Surface *
+g_make_terrain_surface(struct level* level)
 {
     int i, j;
-    struct terrain *p;
-    SDL_Rect dstrect = {0, 0, GRID_SIZE, GRID_SIZE};
-    
-    p = (struct terrain*)malloc(sizeof(*p));
-    p->surface_size.x = 0;
-    p->surface_size.y = 0;
-    p->surface_size.w = GRID_SIZE *level->size.w;
-    p->surface_size.h = GRID_SIZE *level->size.h;
+    SDL_Surface *surface;
+    SDL_Rect    dst = {0, 0, GRID_SIZE, GRID_SIZE};
 
-    /* Make a surface for the terrain to go on */
-    p->surface = SDL_CreateRGBSurface(SDL_SWSURFACE,
-                                      p->surface_size.w,
-                                      p->surface_size.h,
-                                      DEPTH, 0, 0, 0, 0);
+    surface = SDL_CreateRGBSurface(G_SDL_SURFACE_TYPE,
+                                   level->size.w * GRID_SIZE,
+                                   level->size.h * GRID_SIZE,
+                                   g_Depth, 0, 0, 0, 0);
 
     for (i = 0; i < level->size.w; i++) {
         for (j = 0; j < level->size.h; j++) {
-            dstrect.x = i * GRID_SIZE;
-            dstrect.y = j * GRID_SIZE;
-            switch (level->terrain_data[j][i]) {
+            dst.x = i * GRID_SIZE;
+            dst.y = j * GRID_SIZE;
+            switch (level->terrain_data[i][j]) {
                 case 1:
-                    SDL_FillRect(p->surface, &dstrect, 0xffff0000);
+                    SDL_FillRect(surface, &dst, 0xffff0000);
                     break;
                 default:
-                    SDL_FillRect(p->surface, &dstrect, 0xff550000);
+                    SDL_FillRect(surface, &dst, 0xff550000);
                     break;
             }
         }
     }
-    return p;
+
+    return surface;
 }
 
+/* Pan a view over a surface */
 void
-terrain_view_set(struct terrain* s, int x, int y) {
-    s->view.x = s->view.x + x;
-    if (s->view.x < 0)
-        s->view.x = 0;
-    s->view.y = s->view.y + y;
-    if (s->view.y < 0)
-        s->view.y = 0;
+g_pan_rect(SDL_Rect *rect, SDL_Surface *surf, int x, int y)
+{
+    rect->x = rect->x + x;
+    rect->y = rect->y + y;
+
+    /* If we have panned too far move it back */
+    if ((rect->x + rect->w) > surf->w)
+        rect->x = surf->w - rect->w;
+    if (rect->x < 0)
+        rect->x = 0;
+    if ((rect->y + rect->h) > surf->h)
+        rect->y = surf->h - rect->h;
+    if (rect->y < 0)
+        rect->y = 0;
 }
-    
-/* Main */
+
+/* =======================================================================
+ *   Main
+ * ======================================================================= */
 int
 main(int argc, char *args[])
 {
     SDL_Surface *terrain;
-    SDL_Event event;
-    struct terrain *map;
+    SDL_Rect    terrain_view = {0,0,0,0};
+    SDL_Event   event;
 
     /* Initialize */
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_NOPARACHUTE);
@@ -108,17 +115,19 @@ main(int argc, char *args[])
 
     Screen = SDL_SetVideoMode(Layout.screen.w,
                               Layout.screen.h,
-                              DEPTH, SDL_SWSURFACE);
+                              g_Depth, SDL_SWSURFACE);
 
     /* Do the terrain */
-    map = terrain_new(&Level1);
+    terrain = g_make_terrain_surface(&Level1);
 
     /* Fill the regions */
     SDL_FillRect(Screen, &Layout.screen,  0x111111ff);
     SDL_FillRect(Screen, &Layout.map,     0x000055ff);
     SDL_FillRect(Screen, &Layout.message, 0x000055ff);
-    map->view.w = Layout.map.w;
-    map->view.h = Layout.map.h;
+
+    /* Limit the terrain view to what the layout allows */
+    terrain_view.w = Layout.map.w;
+    terrain_view.h = Layout.map.h;
 
     while (1) {
         SDL_PollEvent(&event);
@@ -127,20 +136,20 @@ main(int argc, char *args[])
                 case SDLK_ESCAPE:
                     exit(0); break;
                 case SDLK_DOWN:
-                    terrain_view_set(map, 0, 20); break;
+                    g_pan_rect(&terrain_view, terrain,  0,  20); break;
                 case SDLK_UP:
-                    terrain_view_set(map, 0, -20); break;
+                    g_pan_rect(&terrain_view, terrain,  0, -20); break;
                 case SDLK_LEFT:
-                    terrain_view_set(map, -20, 0); break;
+                    g_pan_rect(&terrain_view, terrain, -20, 0 ); break;
                 case SDLK_RIGHT:
-                    terrain_view_set(map, 20, 0); break;
+                    g_pan_rect(&terrain_view, terrain,  20, 0 ); break;
                 default:
                     break;
             }
         }
         /* Redraw map */
-        SDL_FillRect(Screen, &Layout.map,     0x000055ff);
-        SDL_BlitSurface(map->surface, &map->view, Screen, &Layout.map);
+        SDL_FillRect(Screen, &Layout.map, 0x000055ff);
+        SDL_BlitSurface(terrain, &terrain_view, Screen, &Layout.map);
         SDL_Flip(Screen);
         SDL_Delay(50);
     }
