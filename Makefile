@@ -1,8 +1,8 @@
-sources   = main.c
+sources   = main.c error.c
 bin       = main
 
 CFLAGS   += -ggdb
-CPPFLAGS += -Wall
+CPPFLAGS += -Wall 
 LDFLAGS  += -lSDL
 
 main: $(sources)
