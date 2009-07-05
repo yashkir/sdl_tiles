@@ -15,47 +15,25 @@ struct screen_layout {
     SDL_Rect screen;
     SDL_Rect map;
     SDL_Rect message;
+    SDL_Rect sidebar;
 };
-struct level_new {
+struct level {
     size_t x_n, y_n;
     Uint32 **terrain;
 };
 
 /* =======================================================================
- *   Static Structures
- * ======================================================================= */
-
-struct level {
-    SDL_Rect size;
-    Uint32   terrain_data[10][10];
-} Level1 = {
-    {0,0, 10, 10},
-    {
-        {0,0,0,0,0,0,0,0,0,0},
-        {0,1,0,0,1,0,1,1,1,0},
-        {0,1,0,0,1,0,0,1,0,0},
-        {0,1,0,0,1,0,0,1,0,0},
-        {0,1,1,1,1,0,0,1,0,0},
-        {0,1,0,0,1,0,0,1,0,0},
-        {0,1,0,0,1,0,0,1,0,0},
-        {0,1,0,0,1,0,1,1,1,0},
-        {0,0,0,0,0,0,0,0,0,0},
-        {1,1,1,1,1,1,1,1,1,1},
-    },
-};
-
-/* =======================================================================
  *   Globals
  * ======================================================================= */
-SDL_Surface *g_Screen;
-Uint8        g_Depth = DESIRED_DEPTH;
-
 struct screen_layout g_Layout = {
-    {0,  0,   640, 480},
-    {10, 10,  620, 400},
+    {0,    0, 640, 480},
+    {10,  10, 540, 400},
     {10, 420, 620, 50 },
+    {560, 10,  70, 400},
 };
 
+SDL_Surface *g_Screen;
+Uint8        g_Depth = DESIRED_DEPTH;
 const char   g_Path_unit_tiles[] = "./units.bmp";
 const char   g_Path_terrain_tiles[] = "./terrain.bmp";
 SDL_Surface *g_Tiles_units;
@@ -142,24 +120,6 @@ g_make_terrain_surface(struct level* level)
     SDL_Surface *surface;
 
     surface = SDL_CreateRGBSurface(G_SDL_SURFACE_TYPE,
-                                   level->size.w * GRID_SIZE,
-                                   level->size.h * GRID_SIZE,
-                                   g_Depth, 0, 0, 0, 0);
-
-    SDL_SetColorKey(surface, SDL_SRCCOLORKEY, G_COLOR_ALPHA);
-    SDL_FillRect(surface, NULL, G_COLOR_ALPHA);
-
-    if (!surface)
-        error(ERR_FATAL, "Surface Error: %s\n", SDL_GetError());
-
-    return surface;
-}
-SDL_Surface *
-g_make_terrain_surface_new(struct level_new* level)
-{
-    SDL_Surface *surface;
-
-    surface = SDL_CreateRGBSurface(G_SDL_SURFACE_TYPE,
                                    level->x_n * GRID_SIZE,
                                    level->y_n * GRID_SIZE,
                                    g_Depth, 0, 0, 0, 0);
@@ -203,17 +163,21 @@ g_render_terrain(SDL_Surface *surface, struct level* level)
     SDL_Rect    dst = {0, 0, GRID_SIZE, GRID_SIZE};
     SDL_Rect    src;
 
-    for (i = 0; i < level->size.w; i++) {
-        for (j = 0; j < level->size.h; j++) {
+    for (i = 0; i < level->x_n; i++) {
+        for (j = 0; j < level->y_n; j++) {
             dst.x = i * GRID_SIZE;
             dst.y = j * GRID_SIZE;
-            switch (level->terrain_data[i][j]) {
+            switch (level->terrain[i][j]) {
                 case 0:
                     src = g_whereis_tile(0, 0, GRID_SIZE);
                     SDL_BlitSurface(g_Tiles_terrain, &src, surface, &dst);
                     break;
                 case 1:
                     src = g_whereis_tile(1, 0, GRID_SIZE);
+                    SDL_BlitSurface(g_Tiles_terrain, &src, surface, &dst);
+                    break;
+                case 2:
+                    src = g_whereis_tile(0, 0, GRID_SIZE);
                     SDL_BlitSurface(g_Tiles_terrain, &src, surface, &dst);
                     break;
                 default:
@@ -306,11 +270,11 @@ c_start_demo(void)
 /* =======================================================================
  *   Files and Configuration
  * ======================================================================= */
-struct level_new *
+struct level *
 f_load_level(char *filename)
 {
     FILE *fp;
-    struct level_new *level;
+    struct level *level;
     int x, y;
     int i, j;
 
@@ -324,8 +288,9 @@ f_load_level(char *filename)
     level->x_n = x;
     level->y_n = y;
 
-    for (i = 0; i < x; i++) {
-        for (j = 0; j < (y-4); j++) {
+    /* TODO: clean up dimensions and rotation, maybe */
+    for (j = 0; j < y; j++) {
+        for (i = 0; i < x; i++) {
             fscanf(fp, "%d", &level->terrain[i][j]);
         }
     }
@@ -342,7 +307,7 @@ main(int argc, char *args[])
     SDL_Surface *terrain, *unit_layer, *unit, *unit2;
     SDL_Rect    terrain_view = {0,0,0,0};
     SDL_Event   event;
-    struct level_new *level_new;
+    struct level *level;
     int         temp = 4;
 
     /* Initialize */
@@ -352,21 +317,21 @@ main(int argc, char *args[])
                                 g_Layout.screen.h,
                                 g_Depth, SDL_SWSURFACE);
 
-    level_new = f_load_level("./level1.csv");
+    level = f_load_level("./level1.csv");
 
     /* Create surfaces */
     g_init_tiles();
-    terrain     = g_make_terrain_surface_new(level_new);
-    terrain     = g_make_terrain_surface(&Level1);
-    unit_layer  = g_make_terrain_surface(&Level1);
+    terrain     = g_make_terrain_surface(level);
+    unit_layer  = g_make_terrain_surface(level);
     unit        = g_make_tile(g_Tiles_units, 0, 0, GRID_SIZE);
     unit2       = g_make_tile(g_Tiles_units, 1, 0, GRID_SIZE);
-    g_render_terrain(terrain, &Level1);
+    g_render_terrain(terrain, level);
 
     /* Fill the regions */
     SDL_FillRect(g_Screen, &g_Layout.screen,  0x111111ff);
     SDL_FillRect(g_Screen, &g_Layout.map,     0x000055ff);
     SDL_FillRect(g_Screen, &g_Layout.message, 0x000055ff);
+    SDL_FillRect(g_Screen, &g_Layout.sidebar, 0x000055ff);
 
     /* Limit the terrain view to what the layout allows */
     terrain_view.w = g_Layout.map.w;
